@@ -1,92 +1,104 @@
+
 package com.myphone.app
 
 import android.app.Activity
 import android.os.Bundle
-import android.graphics.Color
-import android.view.Gravity
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.TextView
+import android.widget.*
+import java.net.ServerSocket
+import java.net.Socket
+import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
-    private val blue = Color.rgb(35, 91, 190)
-    private val dark = Color.rgb(28, 35, 48)
+
+    private val port = 8989
+    private var serverSocket: ServerSocket? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = dark
-        window.navigationBarColor = dark
 
-        val page = LinearLayout(this).apply {
+        val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            setPadding(28, 42, 28, 28)
-            setBackgroundColor(Color.rgb(246, 248, 252))
-            layoutDirection = LinearLayout.LAYOUT_DIRECTION_RTL
+            setPadding(30, 40, 30, 30)
         }
 
         val title = TextView(this).apply {
-            text = "MyPhone"
-            textSize = 30f
-            setTextColor(dark)
-            gravity = Gravity.CENTER
+            text = "MyPhone - ربط الهاتفين"
+            textSize = 24f
         }
-        page.addView(title, matchWidth(70))
 
-        val subtitle = TextView(this).apply {
-            text = "نظامك الخاص لإدارة هاتفك عن بُعد"
-            textSize = 16f
-            setTextColor(Color.DKGRAY)
-            gravity = Gravity.CENTER
+        val ipInput = EditText(this).apply {
+            hint = "اكتب عنوان IP للهاتف الآخر"
+            inputType =  textInputType()
         }
-        page.addView(subtitle, matchWidth(55))
 
         val status = TextView(this).apply {
-            text = "حالة المشروع: النسخة التأسيسية"
-            textSize = 17f
-            setTextColor(dark)
-            gravity = Gravity.CENTER
-            setPadding(12, 24, 12, 24)
+            text = "الحالة: غير متصل"
+            textSize = 18f
         }
-        page.addView(status, matchWidth(80))
 
-        addAction(page, "ربط جهاز جديد", "سيتم تفعيل الاقتران الآمن في المرحلة التالية.")
-        addAction(page, "الملفات والصور", "سيتم إضافة الوصول المصرّح به للملفات لاحقاً.")
-        addAction(page, "مشاركة الشاشة", "تتطلب موافقة Android عند بدء مشاركة الشاشة.")
-        addAction(page, "المكالمات والرسائل", "ستضاف الوظائف المتاحة وفق صلاحيات Android.")
-
-        val note = TextView(this).apply {
-            text = "تنبيه: هذه نسخة تأسيسية للواجهة فقط. لا تنفّذ اتصالاً عن بُعد ولا تقرأ الملفات أو الرسائل بعد."
-            textSize = 13f
-            setTextColor(Color.rgb(130, 70, 30))
-            gravity = Gravity.CENTER
-            setPadding(12, 24, 12, 12)
-        }
-        page.addView(note, matchWidth(110))
-
-        setContentView(page)
-    }
-
-    private fun addAction(parent: LinearLayout, label: String, message: String) {
-        val button = Button(this).apply {
-            text = label
-            textSize = 16f
-            isAllCaps = false
-            setTextColor(Color.WHITE)
-            setBackgroundColor(blue)
+        val connect = Button(this).apply {
+            text = "اتصال بالهاتف الآخر"
             setOnClickListener {
-                android.widget.Toast.makeText(this@MainActivity, message, android.widget.Toast.LENGTH_LONG).show()
+                val ip = ipInput.text.toString().trim()
+                if (ip.isEmpty()) {
+                    status.text = "اكتب عنوان IP أولاً"
+                } else {
+                    thread {
+                        try {
+                            Socket(ip, port).use {
+                                runOnUiThread {
+                                    status.text = "تم الاتصال بنجاح"
+                                }
+                            }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                status.text = "فشل الاتصال: ${e.message}"
+                            }
+                        }
+                    }
+                }
             }
         }
-        val params = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        params.setMargins(0, 8, 0, 8)
-        parent.addView(button, params)
+
+        val start = Button(this).apply {
+            text = "تشغيل استقبال الاتصال"
+            setOnClickListener {
+                thread {
+                    try {
+                        serverSocket = ServerSocket(port)
+                        runOnUiThread {
+                            status.text = "الهاتف جاهز لاستقبال الاتصال"
+                        }
+                        while (!serverSocket!!.isClosed) {
+                            serverSocket!!.accept().use {
+                                runOnUiThread {
+                                    status.text = "تم اتصال الهاتف الآخر"
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        runOnUiThread {
+                            status.text = "توقف الاستقبال: ${e.message}"
+                        }
+                    }
+                }
+            }
+        }
+
+        layout.addView(title)
+        layout.addView(ipInput)
+        layout.addView(start)
+        layout.addView(connect)
+        layout.addView(status)
+
+        setContentView(layout)
     }
 
-    private fun matchWidth(height: Int): LinearLayout.LayoutParams =
-        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height)
+    private fun textInputType(): Int =
+        android.text.InputType.TYPE_CLASS_TEXT
+
+    override fun onDestroy() {
+        serverSocket?.close()
+        super.onDestroy()
+    }
 }
