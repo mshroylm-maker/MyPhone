@@ -1,4 +1,3 @@
-
 package com.myphone.app
 
 import android.app.Activity
@@ -11,143 +10,202 @@ import com.google.firebase.database.*
 
 class MainActivity : Activity() {
 
+    private val auth by lazy { FirebaseAuth.getInstance() }
+
     private val db by lazy {
         FirebaseDatabase.getInstance().reference.child("pairings")
     }
 
-    private lateinit var status: TextView
+    private lateinit var emailInput: EditText
+    private lateinit var passwordInput: EditText
     private lateinit var codeInput: EditText
+    private lateinit var status: TextView
     private lateinit var codeView: TextView
-
-    private val uid get() = FirebaseAuth.getInstance().currentUser?.uid
-    private val email get() = FirebaseAuth.getInstance().currentUser?.email
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (uid == null) {
-            showMessage("سجّل الدخول أولاً")
+        if (auth.currentUser != null) {
+            showHome()
+        } else {
+            showLogin()
+        }
+    }
+
+    private fun showLogin() {
+        val layout = makeLayout()
+
+        layout.addView(makeTitle("MyPhone"))
+
+        emailInput = EditText(this).apply {
+            hint = "البريد الإلكتروني"
+            inputType = 33
+        }
+
+        passwordInput = EditText(this).apply {
+            hint = "كلمة المرور"
+            inputType = 129
+        }
+
+        layout.addView(emailInput)
+        layout.addView(passwordInput)
+
+        addButton(layout, "تسجيل الدخول") {
+            login()
+        }
+
+        addButton(layout, "إنشاء حساب جديد") {
+            register()
+        }
+
+        status = makeStatus()
+        layout.addView(status)
+
+        setContentView(layout)
+    }
+
+    private fun login() {
+        val email = emailInput.text.toString().trim()
+        val password = passwordInput.text.toString()
+
+        if (email.isBlank() || password.isBlank()) {
+            status.text = "أدخل البريد وكلمة المرور"
             return
         }
 
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(30, 30, 30, 30)
+        auth.signInWithEmailAndPassword(email, password)
+            .addOnSuccessListener {
+                showHome()
+            }
+            .addOnFailureListener {
+                status.text = "فشل الدخول: ${it.message}"
+            }
+    }
+
+    private fun register() {
+        val email = emailInput.text.toString().trim()
+        val password = passwordInput.text.toString()
+
+        if (email.isBlank() || password.length < 6) {
+            status.text = "أدخل بريداً صحيحاً وكلمة مرور من 6 أحرف على الأقل"
+            return
         }
 
-        val title = TextView(this).apply {
-            text = "MyPhone"
-            textSize = 30f
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-        }
+        auth.createUserWithEmailAndPassword(email, password)
+            .addOnSuccessListener {
+                showHome()
+            }
+            .addOnFailureListener {
+                status.text = "فشل إنشاء الحساب: ${it.message}"
+            }
+    }
+
+    private fun showHome() {
+        val layout = makeLayout()
+
+        layout.addView(makeTitle("MyPhone"))
 
         val subtitle = TextView(this).apply {
-            text = "ربط الهاتفين عبر الإنترنت"
+            text = "ربط الهاتفين"
             textSize = 18f
             gravity = Gravity.CENTER
         }
 
-        val create = Button(this).apply {
-            text = "إنشاء رمز اقتران"
-            setOnClickListener { createPair() }
+        layout.addView(subtitle)
+
+        addButton(layout, "إنشاء رمز اقتران") {
+            createPair()
         }
 
         codeView = TextView(this).apply {
-            text = "لم يتم إنشاء رمز"
+            text = "لا يوجد رمز"
             textSize = 24f
             gravity = Gravity.CENTER
         }
+
+        layout.addView(codeView)
 
         codeInput = EditText(this).apply {
             hint = "أدخل رمز الهاتف الأول"
             inputType = 2
         }
 
-        val join = Button(this).apply {
-            text = "ربط بهذا الهاتف"
-            setOnClickListener { joinPair() }
-        }
-
-        status = TextView(this).apply {
-            text = "جاهز للربط"
-            textSize = 17f
-            gravity = Gravity.CENTER
-        }
-
-        layout.addView(title)
-        layout.addView(subtitle)
-        layout.addView(create)
-        layout.addView(codeView)
         layout.addView(codeInput)
-        layout.addView(join)
+
+        addButton(layout, "ربط الهاتف الثاني") {
+            joinPair()
+        }
+
+        addButton(layout, "تسجيل الخروج") {
+            auth.signOut()
+            showLogin()
+        }
+
+        status = makeStatus()
         layout.addView(status)
 
         setContentView(layout)
     }
 
     private fun createPair() {
+        val uid = auth.currentUser?.uid ?: return
         val code = (100000..999999).random().toString()
-        val data = mapOf(
-            "ownerUid" to uid,
-            "ownerEmail" to email,
-            "createdAt" to ServerValue.TIMESTAMP
-        )
 
         status.text = "جارٍ إنشاء الرمز..."
 
-        db.child(code).runTransaction(object : Transaction.Handler {
-            override fun doTransaction(current: MutableData): Transaction.Result {
-                if (current.exists()) return Transaction.abort()
-                current.value = data
-                return Transaction.success(current)
-            }
+        val data = mapOf(
+            "ownerUid" to uid,
+            "createdAt" to ServerValue.TIMESTAMP,
+            "connectedUid" to ""
+        )
 
-            override fun onComplete(
-                error: DatabaseError?,
-                committed: Boolean,
-                snapshot: DataSnapshot?
-            ) {
-                if (error != null) {
-                    status.text = "خطأ: ${error.message}"
-                } else if (committed) {
-                    codeView.text = "رمز الاقتران: $code"
-                    status.text = "أدخل هذا الرمز في الهاتف الثاني"
-                    listen(code)
-                } else {
-                    status.text = "تعذر إنشاء الرمز، حاول مرة أخرى"
-                }
+        db.child(code).setValue(data)
+            .addOnSuccessListener {
+                codeView.text = code
+                status.text = "أرسل الرمز للهاتف الثاني"
+                listen(code)
             }
-        })
+            .addOnFailureListener {
+                status.text = "تعذر إنشاء الرمز: ${it.message}"
+            }
     }
 
     private fun joinPair() {
         val code = codeInput.text.toString().trim()
+        val uid = auth.currentUser?.uid ?: return
 
         if (code.length != 6) {
             status.text = "أدخل رمزاً من 6 أرقام"
             return
         }
 
-        status.text = "جارٍ التحقق من الرمز..."
+        status.text = "جارٍ التحقق..."
 
-        db.child(code).runTransaction(object : Transaction.Handler {
-            override fun doTransaction(current: MutableData): Transaction.Result {
-                if (!current.exists()) return Transaction.abort()
+        val ref = db.child(code)
 
-                val owner = current.child("ownerUid").getValue(String::class.java)
-                    ?: return Transaction.abort()
+        ref.runTransaction(object : Transaction.Handler {
+
+            override fun doTransaction(
+                current: MutableData
+            ): Transaction.Result {
+
+                if (!current.exists()) {
+                    return Transaction.abort()
+                }
+
+                val owner = current.child("ownerUid")
+                    .getValue(String::class.java)
 
                 val connected = current.child("connectedUid")
                     .getValue(String::class.java)
 
-                if (owner == uid || (connected != null && connected != uid)) {
+                if (owner == uid ||
+                    (!connected.isNullOrEmpty() && connected != uid)
+                ) {
                     return Transaction.abort()
                 }
 
                 current.child("connectedUid").value = uid
-                current.child("connectedEmail").value = email
 
                 return Transaction.success(current)
             }
@@ -158,10 +216,9 @@ class MainActivity : Activity() {
                 snapshot: DataSnapshot?
             ) {
                 if (error != null) {
-                    status.text = "خطأ: ${error.message}"
+                    status.text = error.message
                 } else if (committed) {
-                    codeView.text = "تم إدخال الرمز: $code"
-                    status.text = "تم اقتران الهاتفين بنجاح"
+                    status.text = "تم الاقتران"
                     listen(code)
                 } else {
                     status.text = "الرمز غير صحيح أو مستخدم"
@@ -171,25 +228,61 @@ class MainActivity : Activity() {
     }
 
     private fun listen(code: String) {
-        db.child(code).addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val connected = snapshot.child("connectedUid")
-                    .getValue(String::class.java)
+        db.child(code).addValueEventListener(
+            object : ValueEventListener {
 
-                if (connected != null) {
-                    status.text = "الهاتفان مقترنان بنجاح"
-                } else {
-                    status.text = "بانتظار اتصال الهاتف الثاني"
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    val connected = snapshot.child("connectedUid")
+                        .getValue(String::class.java)
+
+                    status.text =
+                        if (!connected.isNullOrEmpty()) {
+                            "الهاتفان مقترنان"
+                        } else {
+                            "بانتظار الهاتف الثاني"
+                        }
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    status.text = error.message
                 }
             }
-
-            override fun onCancelled(error: DatabaseError) {
-                status.text = "تعذر متابعة الاتصال: ${error.message}"
-            }
-        })
+        )
     }
 
-    private fun showMessage(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    private fun makeLayout(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(28, 28, 28, 28)
+        }
+    }
+
+    private fun makeTitle(value: String): TextView {
+        return TextView(this).apply {
+            text = value
+            textSize = 30f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+        }
+    }
+
+    private fun makeStatus(): TextView {
+        return TextView(this).apply {
+            text = "جاهز"
+            textSize = 16f
+            gravity = Gravity.CENTER
+        }
+    }
+
+    private fun addButton(
+        layout: LinearLayout,
+        label: String,
+        action: () -> Unit
+    ) {
+        layout.addView(Button(this).apply {
+            text = label
+            setOnClickListener { action() }
+        })
     }
 }
