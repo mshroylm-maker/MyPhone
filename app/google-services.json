@@ -1,0 +1,30 @@
+
+{
+  "project_info": {
+    "project_number": "184151550643",
+    "firebase_url": "https://myphone-d31f8-default-rtdb.firebaseio.com",
+    "project_id": "myphone-d31f8",
+    "storage_bucket": "myphone-d31f8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:184151550643:android:0b8d8f0a1d680df2171ec6",
+        "android_client_info": {
+          "package_name": "com.myphone.app"
+        }
+      },
+      "api_key": [
+        {
+          "current_key": "AIzaSyDjPkPHn5Gho1-nuqfy0iHq_31h8rBOrfY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
